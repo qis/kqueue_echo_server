@@ -1,0 +1,7 @@
+.*
+!.clang-format
+!.gitignore
+/bin/
+/build/
+/*.core
+/core
