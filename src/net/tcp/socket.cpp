@@ -109,12 +109,18 @@ async<socket> socket::accept() noexcept {
   return { kqueue_, handle_ };
 }
 
-async<std::string_view> socket::recv(char* data, std::size_t size) noexcept {
-  return { kqueue_, handle_, data, size };
+async<std::string_view>& socket::recv(char* data, std::size_t size) noexcept {
+  if (!recv_) {
+    recv_ = std::make_unique<async<std::string_view>>(kqueue_, handle_, data, size);
+  }
+  return *recv_;
 }
 
-async<bool> socket::send(std::string_view data) noexcept {
-  return { kqueue_, handle_, data.data(), data.size() };
+async<bool>& socket::send(std::string_view data) noexcept {
+  if (!send_) {
+    send_ = std::make_unique<async<bool>>(kqueue_, handle_, data.data(), data.size());
+  }
+  return *send_;
 }
 
 std::error_code socket::shutdown() noexcept {

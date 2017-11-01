@@ -2,6 +2,7 @@
 #include <net/handle.h>
 #include <net/kqueue.h>
 #include <experimental/coroutine>
+#include <memory>
 #include <string_view>
 #include <system_error>
 
@@ -39,11 +40,11 @@ public:
 
   // Reads data into buffer.
   // Returns empty string view on error.
-  async<std::string_view> recv(char* data, std::size_t size) noexcept;
+  async<std::string_view>& recv(char* data, std::size_t size) noexcept;
 
   // Writes data.
   // Returns false on error.
-  async<bool> send(std::string_view data) noexcept;
+  async<bool>& send(std::string_view data) noexcept;
 
   // Gracefully shuts down connection.
   std::error_code shutdown() noexcept;
@@ -53,6 +54,8 @@ public:
 
 private:
   int kqueue_ = -1;
+  std::unique_ptr<async<std::string_view>> recv_;
+  std::unique_ptr<async<bool>> send_;
 };
 
 template <>
