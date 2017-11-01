@@ -16,6 +16,8 @@
 #include <sys/cpuset.h>
 #endif
 
+#include <iostream>
+
 namespace net {
 
 std::error_code kqueue::create() noexcept {
@@ -26,10 +28,17 @@ std::error_code kqueue::create() noexcept {
   }
   struct ::kevent sig;
   EV_SET(&sig, SIGINT, EVFILT_SIGNAL, EV_ADD, 0, 0, nullptr);
+  sig.ext[3] = SIGINT;
+  if (::kevent(kqueue.get(), &sig, 1, nullptr, 0, nullptr) < 0) {
+    return { errno, std::system_category() };
+  }
+  EV_SET(&sig, SIGPIPE, EVFILT_SIGNAL, EV_ADD, 0, 0, nullptr);
+  sig.ext[3] = SIGPIPE;
   if (::kevent(kqueue.get(), &sig, 1, nullptr, 0, nullptr) < 0) {
     return { errno, std::system_category() };
   }
   ::signal(SIGINT, SIG_IGN);
+  ::signal(SIGPIPE, SIG_IGN);
   reset(kqueue.release());
   return {};
 }
@@ -54,14 +63,26 @@ std::error_code kqueue::run(int processor) noexcept {
       break;
     }
     for (std::size_t i = 0, max = static_cast<std::size_t>(count); i < max; i++) {
-      const auto& ev = events[i];
+      auto& ev = events[i];
       if (ev.filter == EVFILT_SIGNAL) {
+        if (ev.ext[3] == SIGPIPE) {
+          std::cout << "SIGPIPE ignored by kqueue\n";
+          continue;
+        }
         running = false;
         break;
       }
+      if (ev.filter == EVFILT_READ && ev.flags & EV_EOF) {
+        // Try to re-queue as a write event to let other queued write events finish first.
+        ev.filter = EVFILT_WRITE;
+        ev.flags = EV_ADD | EV_ONESHOT;
+        if (::kevent(handle_, &ev, 1, nullptr, 0, nullptr) == 0) {
+          continue;
+        }
+      }
       if (ev.udata) {
         const auto data = reinterpret_cast<char*>(ev.ext[2]);
-        const auto size = static_cast<std::size_t>(ev.flags & EV_EOF ? 0 : ev.ext[3]);
+        const auto size = static_cast<std::size_t>(ev.ext[3]);
         auto& cb = *reinterpret_cast<event*>(ev.udata);
         cb(handle_, static_cast<int>(ev.ident), data, size);
       }

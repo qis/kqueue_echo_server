@@ -45,6 +45,9 @@ public:
   // Returns false on error.
   async<bool> send(std::string_view data) noexcept;
 
+  // Gracefully shuts down connection.
+  std::error_code shutdown() noexcept;
+
   // Closes socket.
   std::error_code close() noexcept;
 

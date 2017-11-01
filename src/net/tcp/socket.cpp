@@ -117,6 +117,13 @@ async<bool> socket::send(std::string_view data) noexcept {
   return { kqueue_, handle_, data.data(), data.size() };
 }
 
+std::error_code socket::shutdown() noexcept {
+  if (::shutdown(handle_, SHUT_RDWR) < 0) {
+    return { errno, std::system_category() };
+  }
+  return {};
+}
+
 std::error_code socket::close() noexcept {
   if (::close(handle_) < 0) {
     return { errno, std::system_category() };
@@ -130,11 +137,15 @@ async<socket>::async(int kqueue, int socket) noexcept {
   auto addr = reinterpret_cast<struct sockaddr*>(&storage);
   const auto rv = ::accept4(socket, addr, &socklen, SOCK_NONBLOCK);
   if (rv != -1) {
-    result_ = { kqueue, socket };
+    result_ = { kqueue, rv };
     ready_ = true;
     return;
   }
-  ready_ = errno != EWOULDBLOCK || !queue(kqueue, socket, filter::recv, this, nullptr, 0);
+  if (errno == EWOULDBLOCK) {
+    queue(kqueue, socket, filter::recv, this, nullptr, 0); 
+  } else {
+    ready_ = true;
+  }
 }
 
 void async<socket>::operator()(int kqueue, int socket, char* data, std::size_t size) noexcept {
@@ -154,14 +165,16 @@ async<std::string_view>::async(int kqueue, int socket, char* data, std::size_t s
     ready_ = true;
     return;
   }
-  ready_ = errno != EWOULDBLOCK || !queue(kqueue, socket, filter::recv, this, data, size);
+  if (errno == EWOULDBLOCK) {
+    queue(kqueue, socket, filter::recv, this, data, size);
+  } else {
+    ready_ = true;
+  }
 }
 
 void async<std::string_view>::operator()(int kqueue, int socket, char* data, std::size_t size) noexcept {
-  if (size) {
-    if (const auto rv = ::read(socket, data, size); rv > 0) {
-      result_ = { data, static_cast<std::size_t>(rv) };
-    }
+  if (const auto rv = ::read(socket, data, size); rv > 0) {
+    result_ = { data, static_cast<std::size_t>(rv) };
   }
   handle_.resume();
 }
@@ -178,7 +191,11 @@ async<bool>::async(int kqueue, int socket, const char* data, std::size_t size) n
     }
     return;
   }
-  ready_ = errno == EWOULDBLOCK || !queue(kqueue, socket, filter::send, this, data, size);
+  if (errno == EWOULDBLOCK) {
+    queue(kqueue, socket, filter::send, this, data, size);
+  } else {
+    ready_ = true;
+  }
 }
 
 void async<bool>::operator()(int kqueue, int socket, char* data, std::size_t size) noexcept {

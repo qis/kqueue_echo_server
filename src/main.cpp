@@ -2,19 +2,25 @@
 #include <net/tcp/socket.h>
 #include <net/task.h>
 #include <iostream>
-#include <array>
+#include <vector>
 
 net::task handle(net::tcp::socket client) noexcept {
-  std::array<char, 4096> buffer;
+  std::vector<char> buffer;
+  buffer.resize(40960);
+  const auto buffer_data = buffer.data();
+  const auto buffer_size = buffer.size();
   while (true) {
-    const auto data = co_await client.recv(buffer.data(), buffer.size());
+    const auto data = co_await client.recv(buffer_data, buffer_size);
     if (data.empty()) {
+      std::cout << "recv error\n";
       break;
     }
     if (!co_await client.send(data)) {
+      std::cout << "send error\n";
       break;
     }
   }
+  client.shutdown();
   co_return;
 }
 
